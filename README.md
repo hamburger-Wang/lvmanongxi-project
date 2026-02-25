@@ -18,17 +18,38 @@
 
 ### 1.4文件介绍
 
-main.py	                     程序唯一入口，启动应用、配置全局字体，创建并显示主窗口
-ui_main.py	                 主窗口核心，整合登录 / 主界面，实现侧边栏模块切换、菜单栏功能
-ui_login.py	                 登录窗口，支持跳过登录，处理登录状态切换
-config.py	                   全局配置中心，管理字体、颜色、文件路径、支持的格式等常量
-crop_model.py	               作物分类 / 预测核心算法脚本，接收参数执行模型训练 / 推理
-ui_modules/map_widget.py	   地图分析模块 UI，预留卫星 / 无人机地图可视化接口
-ui_modules/crop_widget.py	   作物预测核心 UI，实现数据导入、参数配置、模型调用、结果展示
-ui_modules/advice_widget.py	 种植建议模块 UI，预留 AI 建议生成接口
-core/data_importer.py	       数据导入工具，解析多格式文件、获取文件详情、校验数据有效性
-core/crop_worker.py	         模型异步线程，调用 crop_model.py，反馈日志 / 进度 / 结果，避免界面卡顿
-core/loading_thread.py	     通用加载线程，处理数据加载进度，复用在各类需要进度展示的场景
+main.py	                     
+程序唯一入口，启动应用、配置全局字体，创建并显示主窗口
+
+ui_main.py	                 
+主窗口核心，整合登录 / 主界面，实现侧边栏模块切换、菜单栏功能
+
+ui_login.py	                 
+登录窗口，支持跳过登录，处理登录状态切换
+
+config.py	                   
+全局配置中心，管理字体、颜色、文件路径、支持的格式等常量
+
+crop_model.py	               
+作物分类 / 预测核心算法脚本，接收参数执行模型训练 / 推理
+
+ui_modules/map_widget.py	   
+地图分析模块 UI，预留卫星 / 无人机地图可视化接口
+
+ui_modules/crop_widget.py	   
+作物预测核心 UI，实现数据导入、参数配置、模型调用、结果展示
+
+ui_modules/advice_widget.py	 
+种植建议模块 UI，预留 AI 建议生成接口
+
+core/data_importer.py	       
+数据导入工具，解析多格式文件、获取文件详情、校验数据有效性
+
+core/crop_worker.py	         
+模型异步线程，调用 crop_model.py，反馈日志 / 进度 / 结果，避免界面卡顿
+
+core/loading_thread.py	     
+通用加载线程，处理数据加载进度，复用在各类需要进度展示的场景
 
 
 ## 技术架构
