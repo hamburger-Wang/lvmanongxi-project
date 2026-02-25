@@ -1,0 +1,26 @@
+环境 / 工具	版本要求	作用
+一、基础环境
+Python	3.9 ~ 3.11	核心运行语言（兼容 PySide6）
+Anaconda/Miniconda	任意版本	虚拟环境管理（避免依赖冲突）
+二、核心依赖包
+  # 一键安装命令（Qt6 Python 绑定，UI 界面核心）
+  pip install pyside6==6.5.0
+三、功能扩展依赖（可选）
+  # 一键安装命令（按需选择）
+  pip install pandas numpy opencv-python tensorflow==2.13.0 matplotlib
+
+    包名	                版本	                  作用
+pandas/numpy	        最新稳定版	     农业数据（CSV / 表格）解析、数值计算
+opencv-python	        最新稳定版	     无人机 / 卫星图像预处理（去噪、裁剪等）
+tensorflow	          2.13.0	       作物分类模型训练 / 推理（核心算法依赖）
+matplotlib	          最新稳定版	     长势趋势图表绘制（可视化展示）
+
+
+四、极简安装指引
+先创建并激活虚拟环境：
+  conda create -n cropsupervision python=3.9 -y
+  conda activate cropsupervision
+装必装依赖（保证 UI 能跑）：
+  pip install pyside6==6.5.0
+如需运行作物模型 / 数据处理，再装扩展依赖：
+  pip install pandas numpy opencv-python tensorflow==2.13.0 matplotlib
