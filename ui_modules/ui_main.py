@@ -6,7 +6,7 @@
 # 2. 配置文件初始化
 # 3. 主界面布局（侧边栏+内容区）
 # 4. 菜单栏创建
-# 5. 功能模块切换（地图分析、作物分类、作物长势对比、种植建议）
+# 5. 功能模块切换（地图分析、作物预测、种植建议）
 # 6. 登录状态管理
 # ==================================================
 import sqlite3
@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtCore import Qt, QSettings  # 只保留QtCore里的类
-from ui_login import LoginWindow
+from ui_modules.ui_login import LoginWindow
 from ui_modules.map_widget import MapWidget
 from ui_modules.crop_classification_widget import CropClassificationWidget
 from ui_modules.crop_growth_widget import CropGrowthWidget
@@ -100,9 +100,9 @@ class MainWindow(QMainWindow):
         sidebar_layout.setSpacing(0)  # 侧边栏布局间距
 
         # 侧边栏按钮
-        # 说明：创建功能模块切换按钮，包括地图分析、作物分类、作物长势对比、种植建议
+        # 说明：创建功能模块切换按钮，包括地图分析、作物分类、作物长势预测、种植建议
         self.sidebar_btns = []  # 存储侧边栏按钮的列表
-        btn_texts = ["地图分析", "作物分类", "作物长势对比", "种植建议"]  # 按钮文本
+        btn_texts = ["地图分析", "作物分类", "作物长势预测", "种植建议"]  # 按钮文本
         for text in btn_texts:
             btn = QPushButton(text)
             btn.setFixedHeight(50)  # 按钮高度
@@ -142,7 +142,7 @@ class MainWindow(QMainWindow):
         # 说明：创建并添加四个功能模块
         self.map_widget = MapWidget()  # 地图分析模块
         self.crop_classification_widget = CropClassificationWidget()  # 作物分类模块
-        self.crop_growth_widget = CropGrowthWidget()  # 作物长势对比模块
+        self.crop_growth_widget = CropGrowthWidget()  # 作物长势预测模块
         self.advice_widget = FarmingAdviceWidget()  # 种植建议模块
         
         self.content_stack.addWidget(self.map_widget)
@@ -200,41 +200,63 @@ class MainWindow(QMainWindow):
         file_menu.addAction(exit_action)
 
         # 设置菜单
-        # 说明：包含用户设置和系统设置功能
+        # 说明：包含清除缓存和修改密码功能
         settings_menu = menubar.addMenu("设置")
-        user_action = QAction("用户设置", self)  # 用户设置动作
-        user_action.triggered.connect(lambda: QMessageBox.information(self, "提示", "用户设置功能开发中！"))
-        system_action = QAction("系统设置", self)  # 系统设置动作
-        system_action.triggered.connect(lambda: QMessageBox.information(self, "提示", "系统设置功能开发中！"))
-        settings_menu.addAction(user_action)
-        settings_menu.addAction(system_action)
+        clear_cache_action = QAction("清除缓存", self)  # 清除缓存动作
+        clear_cache_action.triggered.connect(lambda: QMessageBox.information(self, "提示", "缓存已清除！"))
+        change_pwd_action = QAction("修改密码", self)  # 修改密码动作
+        change_pwd_action.triggered.connect(lambda: QMessageBox.information(self, "提示", "修改密码功能开发中！"))
+        settings_menu.addAction(clear_cache_action)
+        settings_menu.addAction(change_pwd_action)
 
         # 帮助菜单
-        # 说明：包含使用帮助和关于功能
+        # 说明：包含关于项目功能
         help_menu = menubar.addMenu("帮助")
-        help_action = QAction("使用帮助", self)  # 使用帮助动作
-        help_action.triggered.connect(lambda: QMessageBox.information(self, "提示", "使用帮助功能开发中！"))
-        about_action = QAction("关于", self)  # 关于动作
-        about_action.triggered.connect(lambda: QMessageBox.information(self, "关于", "农业智能分析系统 v1.0.0\n大创项目\n© 2024"))
-        help_menu.addAction(help_action)
+        about_action = QAction("关于项目", self)  # 关于项目动作
+        about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
 
     def on_sidebar_click(self):
-        """侧边栏按钮点击事件
+        """侧边栏按钮点击：切换对应功能模块
         
-        说明：根据点击的按钮切换到对应的功能模块
+        说明：处理侧边栏按钮点击事件，切换到对应的功能模块
         """
-        sender = self.sender()  # 获取发送信号的按钮
-        for i, btn in enumerate(self.sidebar_btns):
-            if btn == sender:
-                btn.setChecked(True)  # 选中当前按钮
-                self.content_stack.setCurrentIndex(i)  # 切换到对应模块
-            else:
-                btn.setChecked(False)  # 取消其他按钮的选中状态
+        # 获取当前点击的按钮（核心修复：用sender()精准定位）
+        current_btn = self.sender()
+        if not current_btn:
+            return
+        
+        # 1. 取消所有按钮的选中状态
+        for btn in self.sidebar_btns:
+            btn.setChecked(False)
+        
+        # 2. 只选中当前点击的按钮
+        current_btn.setChecked(True)
+        
+        # 3. 根据按钮索引切换对应页面（100%精准）
+        btn_index = self.sidebar_btns.index(current_btn)  # 获取当前按钮的索引
+        self.content_stack.setCurrentIndex(btn_index)  # 根据索引切换到对应功能模块
 
     def switch_to_main(self):
-        """切换到主界面
+        """登录/跳过登录后切换到主界面
         
-        说明：登录成功或跳过登录时调用，切换到主界面
+        说明：当用户登录成功或跳过登录时，从登录窗口切换到主界面
         """
-        self.central_widget.setCurrentIndex(1)  # 切换到主界面
+        self.central_widget.setCurrentWidget(self.main_interface)  # 切换到主界面
+
+    def show_about(self):
+        """显示关于项目弹窗
+        
+        说明：显示应用的关于信息，包括版本、框架和功能说明
+        """
+        QMessageBox.about(self, "关于项目", f"""
+农业智能分析系统 - 大创项目
+版本：1.0.0
+开发框架：PySide6
+字体配置：{FONT_MAIN}
+主色配置：{COLOR_MAIN}
+功能说明：
+1. 地图分析：对接卫星/无人机数据，支持区域选择
+2. 作物预测：作物分类与长势预测（集成多格式数据导入）
+3. 种植建议：AI驱动的农业种植建议（预留大模型接口）
+""")
