@@ -20,6 +20,12 @@
 
 ## 快速开始
 
+### Web UI 支线说明
+
+本仓库新增了一个 Web UI 支线，用于遥感数据上传、作物分类结果展示、长势三维可视化和种植问答联动。团队成员同步、下载、运行和单样本 HDF5 测试方法见：
+
+[docs/web-ui-branch-guide.md](docs/web-ui-branch-guide.md)
+
 ### 2.1 环境搭建
 1. **安装Anaconda**：从[Anaconda官网](https://www.anaconda.com/)下载并安装
 2. **创建虚拟环境**：
