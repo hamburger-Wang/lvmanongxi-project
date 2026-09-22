@@ -19,6 +19,7 @@ from PySide6.QtGui import QAction, QFont
 from PySide6.QtCore import Qt, QSettings  # 只保留QtCore里的类
 from ui_modules.ui_login import LoginWindow
 from ui_modules.map_widget import MapWidget
+from ui_modules.gis_preprocess_widget import GisPreprocessWidget
 from ui_modules.crop_classification_widget import CropClassificationWidget
 from ui_modules.crop_growth_widget import CropGrowthWidget
 from ui_modules.advice_widget import FarmingAdviceWidget
@@ -100,9 +101,9 @@ class MainWindow(QMainWindow):
         sidebar_layout.setSpacing(0)  # 侧边栏布局间距
 
         # 侧边栏按钮
-        # 说明：创建功能模块切换按钮，包括地图分析、作物分类、作物长势预测、种植建议
+        # 说明：创建功能模块切换按钮，包括地图分析、影像预处理、作物分类、作物长势预测、种植建议
         self.sidebar_btns = []  # 存储侧边栏按钮的列表
-        btn_texts = ["地图分析", "作物分类", "作物长势预测", "种植建议"]  # 按钮文本
+        btn_texts = ["地图分析", "影像预处理", "作物分类", "作物长势预测", "种植建议"]  # 按钮文本
         for text in btn_texts:
             btn = QPushButton(text)
             btn.setFixedHeight(50)  # 按钮高度
@@ -139,13 +140,15 @@ class MainWindow(QMainWindow):
         self.content_stack.setStyleSheet("background-color: #F8F8F8;")  # 内容区背景色
         
         # 添加功能模块
-        # 说明：创建并添加四个功能模块
+        # 说明：创建并添加五个功能模块
         self.map_widget = MapWidget()  # 地图分析模块
+        self.gis_preprocess_widget = GisPreprocessWidget()  # QGIS 影像预处理模块
         self.crop_classification_widget = CropClassificationWidget()  # 作物分类模块
         self.crop_growth_widget = CropGrowthWidget()  # 作物长势预测模块
         self.advice_widget = FarmingAdviceWidget()  # 种植建议模块
         
         self.content_stack.addWidget(self.map_widget)
+        self.content_stack.addWidget(self.gis_preprocess_widget)
         self.content_stack.addWidget(self.crop_classification_widget)
         self.content_stack.addWidget(self.crop_growth_widget)
         self.content_stack.addWidget(self.advice_widget)

@@ -8,6 +8,7 @@ import warnings
 import numpy as np
 from PIL import Image
 import tables
+import tifffile
 
 from core.growth_comparison import GrowthComparison
 
@@ -53,7 +54,7 @@ def analyze_image(image_path: Path, grid_size: int = 26) -> dict[str, Any]:
     existing growth comparison module expects. A trained model can later replace
     this function while keeping the API contract unchanged.
     """
-    image = Image.open(image_path).convert("RGB")
+    image = _open_remote_image(image_path)
     image.thumbnail((720, 720))
     arr = np.asarray(image).astype(np.float32) / 255.0
 
@@ -88,7 +89,6 @@ def analyze_image(image_path: Path, grid_size: int = 26) -> dict[str, Any]:
 
     comparison = GrowthComparison()
     area = comparison.calculate_area(class_map)
-    growth_scores = comparison.calculate_growth_score(class_map_to_weighted_area(class_map, growth_map))
     yield_prediction = comparison.predict_yield(area, pixel_size=1.0)
 
     crop_stats = _build_crop_stats(class_map, growth_map, area, yield_prediction)
@@ -101,6 +101,11 @@ def analyze_image(image_path: Path, grid_size: int = 26) -> dict[str, Any]:
             "width": image.width,
             "height": image.height,
             "gridSize": grid_size,
+            "format": image_path.suffix.lstrip(".").upper() or "IMAGE",
+            "analysisMode": "heuristic",
+            "labelSource": "颜色与纹理规则",
+            "sampleIndex": 0,
+            "sampleCount": 1,
         },
         "summary": {
             "avgGrowth": round(avg_growth, 3),
@@ -116,8 +121,47 @@ def analyze_image(image_path: Path, grid_size: int = 26) -> dict[str, Any]:
             "cells": [cell.to_dict() for cell in cells],
             "cropProfiles": _crop_profiles(),
         },
+        "methodology": _methodology(
+            classification="基于影像颜色与纹理的启发式分类",
+            growth="基于可见光通道构造的归一化长势指标",
+            estimated_yield="按分类面积与项目内置系数估算",
+            model_inference=False,
+        ),
         "advice": build_advice(avg_growth, crop_stats),
     }
+
+
+def _open_remote_image(image_path: Path) -> Image.Image:
+    if image_path.suffix.lower() not in {".tif", ".tiff", ".img"}:
+        return Image.open(image_path).convert("RGB")
+
+    raw = np.asarray(tifffile.imread(image_path))
+    raw = np.squeeze(raw)
+    if raw.ndim == 2:
+        raw = np.repeat(raw[..., np.newaxis], 3, axis=-1)
+    elif raw.ndim == 3:
+        if raw.shape[0] <= 32 and raw.shape[1] > 32 and raw.shape[2] > 32:
+            raw = np.moveaxis(raw, 0, -1)
+        if raw.shape[-1] == 1:
+            raw = np.repeat(raw, 3, axis=-1)
+        elif raw.shape[-1] == 2:
+            raw = np.concatenate([raw, raw[..., :1]], axis=-1)
+        else:
+            raw = raw[..., :3]
+    else:
+        raise ValueError(f"不支持的遥感影像维度: {raw.shape}")
+
+    rgb = np.zeros(raw.shape, dtype=np.float32)
+    for channel in range(3):
+        values = raw[..., channel].astype(np.float32)
+        finite = values[np.isfinite(values)]
+        if finite.size == 0:
+            continue
+        low, high = np.percentile(finite, [2, 98])
+        if high <= low:
+            high = low + 1
+        rgb[..., channel] = np.clip((values - low) / (high - low), 0, 1)
+    return Image.fromarray((rgb * 255).astype(np.uint8), mode="RGB")
 
 
 def demo_analysis() -> dict[str, Any]:
@@ -146,7 +190,17 @@ def demo_analysis() -> dict[str, Any]:
     avg_growth = float(growth_map.mean())
 
     return {
-        "source": {"filename": "系统示例地块", "width": grid, "height": grid, "gridSize": grid},
+        "source": {
+            "filename": "系统示例地块",
+            "width": grid,
+            "height": grid,
+            "gridSize": grid,
+            "format": "SYNTHETIC",
+            "analysisMode": "demo",
+            "labelSource": "程序生成的演示数据",
+            "sampleIndex": 0,
+            "sampleCount": 1,
+        },
         "summary": {
             "avgGrowth": round(avg_growth, 3),
             "healthyRatio": round(float(np.mean(growth_map >= 0.72)), 3),
@@ -158,6 +212,12 @@ def demo_analysis() -> dict[str, Any]:
         "cropStats": crop_stats,
         "abnormalCells": [cell.to_dict() for cell in sorted(cells, key=lambda item: item.anomaly, reverse=True)[:12]],
         "scene": {"cells": [cell.to_dict() for cell in cells], "cropProfiles": _crop_profiles()},
+        "methodology": _methodology(
+            classification="程序生成的演示分类网格",
+            growth="程序生成的演示长势曲面",
+            estimated_yield="按分类面积与项目内置系数估算",
+            model_inference=False,
+        ),
         "advice": build_advice(avg_growth, crop_stats),
     }
 
@@ -173,6 +233,10 @@ def analyze_crop_supervision_sample(
         raise FileNotFoundError(f"未找到数据集文件: {hdf5_path}")
 
     with tables.open_file(str(hdf5_path), mode="r") as hdf5_file:
+        if not hasattr(hdf5_file.root, "data"):
+            raise ValueError("HDF5 缺少 /data 节点")
+        if not hasattr(hdf5_file.root, "truth"):
+            raise ValueError("HDF5 缺少 /truth 标签；当前尚未接入模型，无法对无标签样本分类")
         sample_count = int(hdf5_file.root.data.shape[0])
         if sample_index < 0 or sample_index >= sample_count:
             raise IndexError(f"样本索引超出范围: {sample_index}, 可用范围 0-{sample_count - 1}")
@@ -193,6 +257,10 @@ def analyze_crop_supervision_sample(
             "height": int(labels.shape[0]),
             "gridSize": grid_size,
             "format": "CropSupervision HDF5",
+            "analysisMode": "dataset-label",
+            "labelSource": "HDF5 /truth 标注",
+            "sampleIndex": sample_index,
+            "sampleCount": sample_count,
         },
         "summary": {
             "avgGrowth": round(avg_growth, 3),
@@ -212,7 +280,28 @@ def analyze_crop_supervision_sample(
                 "class_two": {"name": "作物类别 2", "baseColor": "#42a36d", "healthyColor": "#2f9161", "riskColor": "#c5bd52"},
             },
         },
+        "methodology": _methodology(
+            classification="读取 CropSupervision 数据集 /truth 人工标注",
+            growth="对 /data 时序多通道信号做 5%-95% 分位归一化",
+            estimated_yield="按网格面积、归一化长势与演示系数估算",
+            model_inference=False,
+        ),
         "advice": build_advice(avg_growth, crop_stats),
+    }
+
+
+def _methodology(
+    classification: str,
+    growth: str,
+    estimated_yield: str,
+    model_inference: bool,
+) -> dict[str, Any]:
+    return {
+        "classification": classification,
+        "growth": growth,
+        "estimatedYield": estimated_yield,
+        "modelInference": model_inference,
+        "notice": "当前结果用于系统联调与可视化研究，长势和产量尚未经过田间标定，不能直接作为生产决策依据。",
     }
 
 

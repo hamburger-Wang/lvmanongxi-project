@@ -7,6 +7,7 @@ import type { AnalysisResult, CropCell } from "@/lib/api";
 type FieldSceneProps = {
   result: AnalysisResult | null;
   selectedCell?: CropCell | null;
+  colorMode?: "growth" | "crop";
   onSelectCell?: (cell: CropCell | null) => void;
 };
 
@@ -20,7 +21,7 @@ const cropShapes: Record<string, { width: number; heightBoost: number; density: 
   other: { width: 0.5, heightBoost: 0.28, density: 0.4 },
 };
 
-export default function FieldScene({ result, selectedCell, onSelectCell }: FieldSceneProps) {
+export default function FieldScene({ result, selectedCell, colorMode = "growth", onSelectCell }: FieldSceneProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const cellsRef = useRef<CropCell[]>([]);
   const selectedRef = useRef<CropCell | null>(selectedCell ?? null);
@@ -77,7 +78,7 @@ export default function FieldScene({ result, selectedCell, onSelectCell }: Field
       const shape = cropShapes[cell.crop] ?? cropShapes.other;
       const height = Math.max(0.08, cell.height * shape.heightBoost);
       const material = new THREE.MeshStandardMaterial({
-        color: colorFromGrowth(cell),
+        color: colorFromCell(cell, colorMode, result.scene.cropProfiles),
         roughness: 0.68,
         metalness: 0.02,
       });
@@ -90,7 +91,7 @@ export default function FieldScene({ result, selectedCell, onSelectCell }: Field
       clickTargets.push(tile);
 
       if ((cell.x + cell.z) % Math.max(1, Math.round(3 / shape.density)) === 0 && cell.growth > 0.28) {
-        const plant = makePlant(cell, shape);
+        const plant = makePlant(cell, shape, colorMode, result.scene.cropProfiles);
         plant.position.set(cell.x - offset, height + 0.04, cell.z - offset);
         cellGroup.add(plant);
       }
@@ -208,14 +209,19 @@ export default function FieldScene({ result, selectedCell, onSelectCell }: Field
         }
       });
     };
-  }, [result, onSelectCell]);
+  }, [result, colorMode, onSelectCell]);
 
   return <div ref={mountRef} className="scene-canvas" aria-label="三维农田长势场景" />;
 }
 
-function makePlant(cell: CropCell, shape: { width: number; heightBoost: number }) {
+function makePlant(
+  cell: CropCell,
+  shape: { width: number; heightBoost: number },
+  colorMode: "growth" | "crop",
+  cropProfiles: AnalysisResult["scene"]["cropProfiles"]
+) {
   const group = new THREE.Group();
-  const growthColor = new THREE.Color(colorFromGrowth(cell));
+  const growthColor = new THREE.Color(colorFromCell(cell, colorMode, cropProfiles));
   const stemHeight = Math.max(0.18, cell.growth * shape.heightBoost * 0.9);
   const stem = new THREE.Mesh(
     new THREE.CylinderGeometry(shape.width * 0.08, shape.width * 0.12, stemHeight, 6),
@@ -235,7 +241,14 @@ function makePlant(cell: CropCell, shape: { width: number; heightBoost: number }
   return group;
 }
 
-function colorFromGrowth(cell: CropCell) {
+function colorFromCell(
+  cell: CropCell,
+  colorMode: "growth" | "crop",
+  cropProfiles: AnalysisResult["scene"]["cropProfiles"]
+) {
+  if (colorMode === "crop") {
+    return cropProfiles[cell.crop]?.baseColor ?? "#727d72";
+  }
   if (cell.anomaly > 0.55) return "#bb553f";
   if (cell.growth < 0.45) return "#c49a3a";
   if (cell.growth < 0.68) return "#8aa64a";

@@ -39,8 +39,8 @@ export default function LoginPage() {
           </div>
         </div>
         <div className="login-copy">
-          <strong>统一身份入口</strong>
-          <span>登录后进入影像接入、作物分类、长势评估、三维可视化与种植问答工作台。</span>
+          <strong>本地联调入口</strong>
+          <span>当前账号接口用于本地功能联调，正式上线前需要替换为数据库用户、密码哈希和服务端会话认证。</span>
         </div>
         <div className="login-form standalone">
           <label>

@@ -58,6 +58,16 @@ python -m uvicorn backend.api:app --host 127.0.0.1 --port 8000
 http://127.0.0.1:8000/api/health
 ```
 
+可选环境变量：
+
+```powershell
+$env:DASHSCOPE_API_KEY="你的阿里云百炼 API Key"
+$env:ALLOWED_ORIGINS="http://127.0.0.1:3000,https://你的前端域名"
+$env:MAX_UPLOAD_MB="512"
+```
+
+`ALLOWED_ORIGINS` 用于允许部署后的前端跨域访问后端；多个地址用英文逗号分隔。
+
 ## 4. 前端运行方法
 
 另开一个 PowerShell 窗口：
@@ -127,9 +137,12 @@ HDF5 文件上传
 - 登录页与主界面跳转
 - HDF5 / GeoTIFF / IMG 上传入口
 - CropSupervision HDF5 `data` / `truth` 读取
+- TIFF 及 TIFF 兼容 IMG 的多波段读取与可视化规则分析
 - 分类统计、长势指标、风险区域生成
 - Three.js 三维地块渲染
 - 阿里云 DashScope 问答接口预留，配置 `DASHSCOPE_API_KEY` 后可走正式接口
+
+界面现在会显示后端在线状态、问答提供方和本次分析依据。HDF5 测试样本的分类结果来自 `/truth` 标签；长势、水分与产量是研究阶段的归一化或规则估算，并非训练模型输出。
 
 当前仍属于后续接入项：
 
@@ -137,6 +150,8 @@ HDF5 文件上传
 - Web 端调用 TensorFlow 模型权重做真正预测
 - 大文件上传到对象存储或服务器数据目录
 - 多用户账号系统和权限控制
+
+当前登录接口只检查账号和密码是否为空，生成的是本地演示 token；它不能作为正式登录系统使用。
 
 其中“训练模型”和“真正模型预测”依赖 TensorFlow 环境和训练好的模型权重。当前仓库没有提交 `B.hdf5`，本地如需跑原始模型，需要额外准备 Python 3.10/3.11 环境和 TensorFlow 依赖。
 
@@ -153,4 +168,3 @@ HDF5 文件上传
 ### 前端能部署到 Vercel 吗？
 
 前端可以。训练和推理后端不建议放 Vercel，建议放阿里云 ECS / GPU 服务器 / 单独 FastAPI 服务。
-

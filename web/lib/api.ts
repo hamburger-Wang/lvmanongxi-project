@@ -27,6 +27,10 @@ export type AnalysisResult = {
     height: number;
     gridSize: number;
     format?: string;
+    analysisMode: "demo" | "heuristic" | "dataset-label" | "model-inference";
+    labelSource: string;
+    sampleIndex: number;
+    sampleCount: number;
   };
   summary: {
     avgGrowth: number;
@@ -42,10 +46,32 @@ export type AnalysisResult = {
     cells: CropCell[];
     cropProfiles: Record<string, { name: string; baseColor: string; healthyColor: string; riskColor: string }>;
   };
+  methodology: {
+    classification: string;
+    growth: string;
+    estimatedYield: string;
+    modelInference: boolean;
+    notice: string;
+  };
   advice: string[];
 };
 
+export type BackendHealth = {
+  status: string;
+  service: string;
+  modelInference: boolean;
+  adviceProvider: "aliyun-dashscope" | "local-fallback";
+};
+
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
+
+export async function fetchBackendHealth(): Promise<BackendHealth> {
+  const response = await fetch(`${API_BASE}/api/health`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await getErrorText(response));
+  }
+  return response.json();
+}
 
 export async function login(username: string, password: string) {
   const response = await fetch(`${API_BASE}/api/auth/login`, {

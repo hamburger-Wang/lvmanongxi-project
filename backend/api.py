@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sys
 import urllib.error
 import urllib.request
@@ -12,6 +11,7 @@ from uuid import uuid4
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -22,15 +22,21 @@ from backend.services.agri_analysis import analyze_crop_supervision_sample, anal
 
 UPLOAD_DIR = PROJECT_ROOT / "backend" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "512")) * 1024 * 1024
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if origin.strip()
+]
 
 app = FastAPI(title="农业智能分析系统 Web API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,8 +54,14 @@ class AdviceChatRequest(BaseModel):
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "service": "agri-web-api"}
+def health() -> dict[str, str | bool]:
+    has_aliyun_key = bool(os.getenv("DASHSCOPE_API_KEY") or os.getenv("ALIYUN_API_KEY"))
+    return {
+        "status": "ok",
+        "service": "agri-web-api",
+        "modelInference": False,
+        "adviceProvider": "aliyun-dashscope" if has_aliyun_key else "local-fallback",
+    }
 
 
 @app.post("/api/auth/login")
@@ -98,13 +110,15 @@ async def analyze_uploaded_image(file: UploadFile = File(...)) -> dict:
 
     safe_name = f"{uuid4().hex}{suffix}"
     target = UPLOAD_DIR / safe_name
-    with target.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
     try:
-        return analyze_image(target)
+        await _save_upload(file, target)
+        return await run_in_threadpool(analyze_image, target)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"图片分析失败：{exc}") from exc
+    finally:
+        target.unlink(missing_ok=True)
 
 
 @app.post("/api/analysis/dataset")
@@ -115,15 +129,37 @@ async def analyze_uploaded_dataset(file: UploadFile = File(...), sample_index: i
 
     safe_name = f"{uuid4().hex}{suffix}"
     target = UPLOAD_DIR / safe_name
-    with target.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
     try:
+        await _save_upload(file, target)
         if suffix in {".hdf5", ".h5"}:
-            return analyze_crop_supervision_sample(target, sample_index=sample_index, display_name=file.filename)
-        return analyze_image(target)
+            return await run_in_threadpool(
+                analyze_crop_supervision_sample,
+                target,
+                sample_index,
+                32,
+                file.filename,
+            )
+        return await run_in_threadpool(analyze_image, target)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"遥感数据分析失败：{exc}") from exc
+    finally:
+        target.unlink(missing_ok=True)
+
+
+async def _save_upload(file: UploadFile, target: Path) -> None:
+    written = 0
+    try:
+        with target.open("wb") as buffer:
+            while chunk := await file.read(1024 * 1024):
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    max_mb = MAX_UPLOAD_BYTES // (1024 * 1024)
+                    raise HTTPException(status_code=413, detail=f"文件超过 {max_mb} MB 上传限制，请上传单样本文件")
+                buffer.write(chunk)
+    finally:
+        await file.close()
 
 
 def _build_analysis_context(analysis: dict | None) -> str:
