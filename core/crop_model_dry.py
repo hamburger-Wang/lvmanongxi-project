@@ -8,13 +8,19 @@ import pandas as pd
 import rasterio
 from rasterio.mask import mask
 from rasterio.plot import show
-import geopandas as gpd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import confusion_matrix, classification_report, cohen_kappa_score
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
-import seaborn as sns
+try:
+    import seaborn as sns
+except ImportError:
+    sns = None
+try:
+    import geopandas as gpd
+except ImportError:
+    gpd = None
 from scipy import ndimage
 import warnings
 import argparse
@@ -272,7 +278,11 @@ class CropClassificationSystem:
         绘制混淆矩阵
         """
         cm = confusion_matrix(y_true, y_pred)
-        
+
+        if sns is None:
+            print("未安装 seaborn，跳过混淆矩阵绘制")
+            return
+
         plt.figure(figsize=(8, 6))
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
                     xticklabels=self.class_names,

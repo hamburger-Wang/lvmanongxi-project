@@ -8,8 +8,11 @@ import urllib.request
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from typing import Any, Dict, Optional
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
@@ -18,6 +21,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.services.agri_analysis import analyze_crop_supervision_sample, analyze_image, demo_analysis
+from backend.services import growth_service, model_inference, qgis_jobs, rf_service, training_jobs
+from backend.services.job_runner import get_job, job_to_dict, stop_job
 
 
 UPLOAD_DIR = PROJECT_ROOT / "backend" / "uploads"
@@ -50,22 +55,24 @@ class LoginRequest(BaseModel):
 
 class AdviceChatRequest(BaseModel):
     question: str
-    analysis: dict | None = None
+    analysis: Optional[dict] = None
 
 
 @app.get("/api/health")
-def health() -> dict[str, str | bool]:
+def health() -> Dict[str, Any]:
     has_aliyun_key = bool(os.getenv("DASHSCOPE_API_KEY") or os.getenv("ALIYUN_API_KEY"))
     return {
         "status": "ok",
         "service": "agri-web-api",
-        "modelInference": False,
+        "modelInference": model_inference.model_file_exists(),
+        "randomForest": rf_service.is_available(),
+        "qgis": qgis_jobs.qgis_info(),
         "adviceProvider": "aliyun-dashscope" if has_aliyun_key else "local-fallback",
     }
 
 
 @app.post("/api/auth/login")
-def login(payload: LoginRequest) -> dict[str, str]:
+def login(payload: LoginRequest) -> Dict[str, str]:
     if not payload.username.strip() or not payload.password.strip():
         raise HTTPException(status_code=400, detail="请输入用户名和密码")
     return {
@@ -76,7 +83,7 @@ def login(payload: LoginRequest) -> dict[str, str]:
 
 
 @app.post("/api/advice/chat")
-def advice_chat(payload: AdviceChatRequest) -> dict[str, str]:
+def advice_chat(payload: AdviceChatRequest) -> Dict[str, str]:
     question = payload.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="请输入咨询问题")
@@ -148,6 +155,194 @@ async def analyze_uploaded_dataset(file: UploadFile = File(...), sample_index: i
         target.unlink(missing_ok=True)
 
 
+@app.post("/api/analysis/model")
+async def analyze_with_fcn_model(file: UploadFile = File(...), sample_index: int = 0) -> dict:
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".hdf5", ".h5", ".tif", ".tiff", ".img"}:
+        raise HTTPException(status_code=400, detail="请上传 HDF5、GeoTIFF 或 IMG 遥感数据文件")
+    if not model_inference.model_file_exists():
+        raise HTTPException(status_code=503, detail=f"未找到模型文件：{model_inference.MODEL_PATH}")
+    if not model_inference.is_model_ready():
+        raise HTTPException(status_code=503, detail="当前 Python 环境缺少 TensorFlow，无法执行模型推理，请在安装 tensorflow 的环境中启动后端")
+
+    safe_name = f"{uuid4().hex}{suffix}"
+    target = UPLOAD_DIR / safe_name
+    try:
+        await _save_upload(file, target)
+        return await run_in_threadpool(
+            model_inference.analyze_with_model,
+            target,
+            sample_index,
+            32,
+            file.filename,
+        )
+    except HTTPException:
+        raise
+    except (IndexError, ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=f"模型推理失败：{exc}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"模型推理失败：{exc}") from exc
+    finally:
+        target.unlink(missing_ok=True)
+
+
+@app.post("/api/analysis/random-forest")
+async def analyze_with_random_forest(
+    file: UploadFile = File(...),
+    samples: Optional[UploadFile] = None,
+) -> dict:
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".tif", ".tiff", ".img"}:
+        raise HTTPException(status_code=400, detail="随机森林分类需要上传多光谱 GeoTIFF/IMG 影像")
+    if not rf_service.is_available():
+        raise HTTPException(status_code=503, detail="当前 Python 环境缺少 scikit-learn/rasterio/pandas/scipy")
+
+    image_path = UPLOAD_DIR / f"{uuid4().hex}{suffix}"
+    sample_path = UPLOAD_DIR / f"{uuid4().hex}.csv"
+    try:
+        await _save_upload(file, image_path)
+        if samples is not None and (samples.filename or "").strip():
+            await _save_upload(samples, sample_path)
+        return await run_in_threadpool(
+            rf_service.analyze_random_forest,
+            image_path,
+            sample_path if sample_path.exists() else None,
+        )
+    except HTTPException:
+        raise
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=f"随机森林分类失败：{exc}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"随机森林分类失败：{exc}") from exc
+    finally:
+        image_path.unlink(missing_ok=True)
+        sample_path.unlink(missing_ok=True)
+
+
+@app.post("/api/analysis/growth-comparison")
+async def compare_growth_periods(
+    file1: UploadFile = File(...),
+    file2: UploadFile = File(...),
+    sample1: int = Form(0),
+    sample2: int = Form(0),
+    label1: str = Form("时期一"),
+    label2: str = Form("时期二"),
+) -> dict:
+    allowed = {".hdf5", ".h5"}
+    paths: list[Path] = []
+    try:
+        for upload in (file1, file2):
+            suffix = Path(upload.filename or "").suffix.lower()
+            if suffix not in allowed:
+                raise HTTPException(status_code=400, detail="长势对比需要上传含 /truth 标签的 HDF5 数据集")
+            target = UPLOAD_DIR / f"{uuid4().hex}{suffix}"
+            await _save_upload(upload, target)
+            paths.append(target)
+        return await run_in_threadpool(
+            growth_service.compare_periods,
+            paths[0], sample1, label1.strip() or "时期一",
+            paths[1], sample2, label2.strip() or "时期二",
+        )
+    except HTTPException:
+        raise
+    except (IndexError, ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=f"长势对比失败：{exc}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"长势对比失败：{exc}") from exc
+    finally:
+        for path in paths:
+            path.unlink(missing_ok=True)
+
+
+@app.post("/api/jobs/train-fcn")
+async def create_fcn_training_job(
+    file: UploadFile = File(...),
+    loss: str = Form("Cross-entropy"),
+    epochs: int = Form(10),
+) -> dict:
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".hdf5", ".h5"}:
+        raise HTTPException(status_code=400, detail="FCN 训练需要上传 HDF5 数据集（含 /data 与 /truth）")
+
+    target = UPLOAD_DIR / f"{uuid4().hex}{suffix}"
+    try:
+        await _save_upload(file, target)
+        job = await run_in_threadpool(training_jobs.start_fcn_training, target, loss, epochs)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        target.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        target.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"训练任务创建失败：{exc}") from exc
+    return {"jobId": job.id, **job_to_dict(job)}
+
+
+@app.post("/api/preprocess/qgis")
+async def create_qgis_preprocess_job(
+    file: UploadFile = File(...),
+    epsg: str = Form("EPSG:32650"),
+    resolution: float = Form(10.0),
+    tileSize: int = Form(128),
+    resampling: str = Form("双线性（Bilinear）"),
+    maxSamples: int = Form(300),
+) -> dict:
+    if not qgis_jobs.qgis_ready():
+        raise HTTPException(status_code=503, detail="服务器未检测到 QGIS（设置 QGIS_ROOT 环境变量后重启后端）")
+    if Path(file.filename or "").suffix.lower() != ".zip":
+        raise HTTPException(status_code=400, detail="请上传 ZIP：每个时相一个子目录，内含 B02.tif 等单波段影像")
+
+    target = UPLOAD_DIR / f"{uuid4().hex}.zip"
+    try:
+        await _save_upload(file, target)
+        job = await run_in_threadpool(
+            qgis_jobs.start_preprocess_job,
+            target, epsg.strip(), resolution, tileSize, resampling, maxSamples,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        target.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"QGIS 预处理任务创建失败：{exc}") from exc
+    return {"jobId": job.id, **job_to_dict(job)}
+
+
+@app.get("/api/jobs/{job_id}")
+def read_job(job_id: str) -> dict:
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="任务不存在或后端已重启")
+    return job_to_dict(job)
+
+
+@app.post("/api/jobs/{job_id}/stop")
+def stop_running_job(job_id: str) -> dict:
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="任务不存在或后端已重启")
+    stop_job(job)
+    return {"status": "stopping"}
+
+
+@app.get("/api/jobs/{job_id}/artifacts/{name}")
+def download_job_artifact(job_id: str, name: str) -> FileResponse:
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="任务不存在或后端已重启")
+    filename = job.artifacts.get(name)
+    if filename:
+        path = job.workdir / filename
+        if path.exists() and path.resolve().parent == job.workdir.resolve():
+            media_type = "application/octet-stream"
+            if filename.endswith(".png"):
+                media_type = "image/png"
+            elif filename.endswith((".h5", ".hdf5")):
+                media_type = "application/x-hdf5"
+            return FileResponse(str(path), media_type=media_type, filename=filename)
+    raise HTTPException(status_code=404, detail="产物不存在")
+
+
 async def _save_upload(file: UploadFile, target: Path) -> None:
     written = 0
     try:
@@ -162,7 +357,7 @@ async def _save_upload(file: UploadFile, target: Path) -> None:
         await file.close()
 
 
-def _build_analysis_context(analysis: dict | None) -> str:
+def _build_analysis_context(analysis: Optional[dict]) -> str:
     if not analysis:
         return "当前尚未上传影像或生成分析结果。"
 
