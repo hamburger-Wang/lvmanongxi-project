@@ -95,7 +95,7 @@ class CropClassificationWidget(QWidget):
             ("模型选择：", QComboBox(), ["crop_model", "crop_model-dry", "第三模型"]),
             ("损失函数：", QComboBox(), ["Cross-entropy", "IOU", "F1"]),
             ("训练轮数：", QLineEdit(), ["5"]),
-            ("模型路径：", QLineEdit(), ["models/B.hdf5"]),
+            ("模型路径：", QLineEdit(), ["./B.hdf5"]),
             ("结果图路径：", QLineEdit(), ["./result.png"])
         ]
         self.widgets = {}  # 存储参数控件，方便后续获取值
@@ -306,3 +306,4 @@ class CropClassificationWidget(QWidget):
         # 恢复状态
         self.run_model_btn.setEnabled(True)  # 启用运行模型按钮
         self.stop_model_btn.setEnabled(False)  # 禁用停止按钮
+

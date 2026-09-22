@@ -11,17 +11,10 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-try:
-    import seaborn as sns
-except ImportError:
-    sns = None
+import seaborn as sns
 from pathlib import Path
-try:
-    import rasterio
-    from rasterio.plot import show
-except ImportError:
-    rasterio = None
-    show = None
+import rasterio
+from rasterio.plot import show
 from typing import Dict, List, Tuple, Optional
 
 class GrowthComparison:
@@ -73,8 +66,6 @@ class GrowthComparison:
         file_ext = Path(file_path).suffix.lower()
         
         if file_ext in [".tif", ".tiff"]:
-            if rasterio is None:
-                raise ImportError("读取TIFF分类结果需要安装 rasterio")
             # 读取TIFF格式的分类结果
             with rasterio.open(file_path) as src:
                 data = src.read(1)  # 读取第一个波段
@@ -442,3 +433,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

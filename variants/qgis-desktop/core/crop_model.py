@@ -459,7 +459,7 @@ def main():
     parser.add_argument('--data_path', type=str, required=True, help='数据文件路径（HDF5/TIFF/IMG）')
     parser.add_argument('--out_loss', type=str, default='Cross-entropy', choices=['Cross-entropy', 'IOU', 'F1'], help='损失函数')
     parser.add_argument('--epochs', type=int, default=5, help='训练轮数（仅train模式有效）')
-    parser.add_argument('--model_path', type=str, default='models/B.hdf5', help='模型保存/加载路径')
+    parser.add_argument('--model_path', type=str, default='./B.hdf5', help='模型保存/加载路径')
     parser.add_argument('--img_path', type=str, default='./result.png', help='结果图保存路径')
     
     args = parser.parse_args()

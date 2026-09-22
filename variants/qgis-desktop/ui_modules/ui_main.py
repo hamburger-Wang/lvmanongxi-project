@@ -142,7 +142,7 @@ class MainWindow(QMainWindow):
         # 添加功能模块
         # 说明：创建并添加五个功能模块
         self.map_widget = MapWidget()  # 地图分析模块
-        self.gis_preprocess_widget = GisPreprocessWidget()  # QGIS 影像预处理模块
+        self.gis_preprocess_widget = GisPreprocessWidget()  # 影像预处理模块
         self.crop_classification_widget = CropClassificationWidget()  # 作物分类模块
         self.crop_growth_widget = CropGrowthWidget()  # 作物长势预测模块
         self.advice_widget = FarmingAdviceWidget()  # 种植建议模块

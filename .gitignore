@@ -1,0 +1,6 @@
+datasets/
+backend/uploads/
+web/.next/
+web/node_modules/
+__pycache__/
+*.pyc
