@@ -20,22 +20,6 @@
 
 ## 快速开始
 
-### Web UI 支线说明
-
-本仓库新增了一个 Web UI 支线，用于遥感数据上传、作物分类结果展示、长势三维可视化和种植问答联动。团队成员同步、下载、运行和单样本 HDF5 测试方法见：
-
-[docs/web-ui-branch-guide.md](docs/web-ui-branch-guide.md)
-
-### QGIS 多时相预处理
-
-桌面端已加入“影像预处理”入口，可将多时相 Sentinel-2 波段影像统一投影、合成、切片并打包为时序 HDF5。输入目录规范、环境要求和与 Web/模型的衔接见：
-
-[docs/qgis-preprocessing-guide.md](docs/qgis-preprocessing-guide.md)
-
-### 独立桌面版本快照
-
-团队提供的完整 QGIS 桌面版源码已原样保存在 `variants/qgis-desktop/`，与根目录的 Web 系统分开维护；该目录的整合说明见 [variants/qgis-desktop/INTEGRATION.md](variants/qgis-desktop/INTEGRATION.md)。
-
 ### 2.1 环境搭建
 1. **安装Anaconda**：从[Anaconda官网](https://www.anaconda.com/)下载并安装
 2. **创建虚拟环境**：
@@ -45,7 +29,7 @@
    ```
 3. **安装依赖**：
    ```bash
-   pip install PySide6 pandas numpy h5py tifffile rasterio
+   pip install PySide6 pandas numpy h5py tifffile
    ```
 
 ### 2.2 运行项目
@@ -60,7 +44,7 @@
    ```
 3. **使用流程**：
    - 启动应用后，可选择跳过登录直接进入主界面
-   - 在侧边栏选择功能模块：地图分析、影像预处理、作物预测、种植建议
+   - 在侧边栏选择功能模块：地图分析、作物预测、种植建议
    - 导入数据文件，配置模型参数，运行分析
    - 查看分析结果和AI建议
 
@@ -203,6 +187,7 @@
 3. 配置模型路径和参数
 
 ## 总结
+
 
 
 
